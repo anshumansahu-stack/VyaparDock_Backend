@@ -1,0 +1,89 @@
+Pipeline Explanation
+
+1. PDFExtractor.py
+
+Here is a clear, section-by-section breakdown of your code. You can use these notes to easily understand and review how your PyMuPDF (`fitz`) script smartly parses single- and multi-column resumes.
+
+---
+
+### **High-Level Overview of Your Approach**
+
+Resumes often have a **single-column header** at the top (Name, Contact Info, Summary) followed by a **two-column layout** below (Experience on the left, Skills/Education on the right).
+
+Your code cleverly handles this by:
+
+1. Extracting raw text blocks and their coordinates.
+2. Finding the exact vertical point where the document splits into multiple columns (`column_start_y`).
+3. Splitting text into **Header blocks** (read top-to-bottom) and **Body blocks** (clustered into left and right columns).
+4. Assembling everything in a logical serial reading order.
+
+---
+
+### **1. `blocks_overlap_vertically(b1, b2)**`
+
+* **Purpose:** Checks if two text blocks overlap vertically (i.e., they sit side-by-side on the page).
+* **How it works:**
+* In PyMuPDF, a text block is represented as a tuple: `(x0, y0, x1, y1, text, block_no, block_type)`.
+* `b[1]` is the top edge (`y0`) and `b[3]` is the bottom edge (`y1`).
+* The function returns `True` if block 1's top is higher than block 2's bottom **AND** block 2's top is higher than block 1's bottom. This geometric intersection proves they occupy the same horizontal row.
+
+
+
+---
+
+### **2. `find_column_start_y(text_blocks)**`
+
+* **Purpose:** Dynamically finds the exact vertical coordinate (`y`) on the page where the layout switches from single-column (like your name and header) to multi-column.
+* **How it works:**
+* It loops through every text block and checks if there is *another* block that overlaps it vertically (`blocks_overlap_vertically`) but has a different horizontal position (`other[0] != b[0]`, meaning a different left-edge coordinate `x0`).
+* If it finds such a side-by-side neighbor, it marks that vertical position as the beginning of the multi-column section by taking the topmost coordinate of the overlapping group.
+* If no side-by-side blocks are found anywhere on the page, it defaults to `0` (meaning the whole page is treated as columns or single-column body).
+
+
+
+---
+
+### **3. `cluster_into_two_columns(body_blocks)**`
+
+* **Purpose:** Groups all body text blocks into either a **Left Column** or a **Right Column** and sorts them top-to-bottom.
+* **How it works:**
+* **Center calculation:** It finds the horizontal center of each block using `(x0 + x1) / 2` and identifies the absolute leftmost center (`c_left`) and rightmost center (`c_right`) to act as initial cluster centers.
+* **K-Means style loop (10 iterations):** It iterates 10 times to refine the grouping. For each block, it measures whether its center is closer to `c_left` or `c_right`, assigning it to the corresponding group. Then, it recalculates the average center for both groups so the boundaries adjust accurately.
+* **Sorting:** Finally, it sorts both the left and right groups independently by their vertical position (`b[1]`, or `y0`) so text flows properly from top to bottom within each column.
+
+
+
+---
+
+### **4. `extract_text_from_pdf(file_bytes: bytes)**`
+
+* **Purpose:** The main orchestrator function that opens the PDF from raw bytes, processes page by page, and pulls everything together into a single sequential string.
+* **How it works:**
+* Opens the PDF in-memory using `fitz.open(stream=file_bytes, filetype="pdf")`.
+* For each page:
+1. Extracts blocks via `page.get_text("blocks")` and filters out non-text elements (`b[6] == 0`), sorting them initially by top coordinate.
+2. Calls `find_column_start_y` to find the split point.
+3. Splits blocks into `header_blocks` (everything above the split line) and `body_blocks` (everything on or below the split line).
+4. Passes `body_blocks` into `cluster_into_two_columns` to get neatly separated `left_col` and `right_col`.
+5. Combines them sequentially: **Header $\rightarrow$ Left Column $\rightarrow$ Right Column**.
+
+
+* Joins all text parts together with newlines and returns the final clean string.
+
+
+2. Text Cleaning(NLP Step)
+
+
+Description:
+
+NLTK (Natural Language Toolkit) is a Python library for working with human language text — one of the oldest and most widely used NLP libraries in Python, mostly used for learning/prototyping rather than production-scale systems (spaCy or Hugging Face's tools tend to take over there), but it's genuinely well-suited for what you're doing: a straightforward, deterministic text-cleaning pipeline, not deep learning.
+
+What it actually provides, relevant to your use case:
+
+- **Corpora (downloadable text datasets)** — this is what `stopwords` and `words` are. Not code, just curated word lists NLTK ships separately from the library itself, downloaded on demand via `nltk.download(...)`.
+- **`stopwords`** — a pre-built list of extremely common words per language ("the," "is," "and," "a," etc.) that carry little distinguishing meaning for tasks like keyword matching. That's what your `remove_stopwords()` function filters against.
+- **`words`** — a broad English dictionary/word list. You're using this as a lookup table in `dehyphenate()` to check "does this joined string form a real word?"
+- Beyond what you're using here, NLTK also offers tokenizers (smarter sentence/word splitting than plain `.split()`), stemmers/lemmatizers (reducing words to root forms — "running" → "run"), and part-of-speech tagging — none of which you need yet, but worth knowing they exist if your pipeline ever needs smarter preprocessing than what you've built.
+
+For your notes, the core thing to remember: **NLTK the library** = code you `pip install`. **NLTK's corpora** (stopwords, words, etc.) = data you `nltk.download()` separately, stored locally after first download, and required before the corresponding NLTK functions/lookups will work.
+
