@@ -1,5 +1,12 @@
+# Virtual environment & Python cache
 vyapardock_env/
 __pycache__/
 *.py[cod]
+*$py.class
+
+# VS Code Code Runner scratch files
+tempCodeRunnerFile*
+
+# Environment & editor settings
 .env
 .vscode/
