@@ -1,0 +1,5 @@
+vyapardock_env/
+__pycache__/
+*.py[cod]
+.env
+.vscode/
